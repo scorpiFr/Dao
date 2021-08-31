@@ -1,0 +1,137 @@
+<?php
+
+/**
+ * HybridDao
+ *
+ * Data is stored in sqk database AND in a content storage manager.
+ *
+ * @note	Use Dao.
+ * @author	Khalaghi camille
+ */
+class HybridDao extends Dao {
+
+	/** @var Object $_contentStore key-Value storage service engine. */
+	protected $_contentStore = null;
+	protected $_keyPrefix = '';
+
+	/**
+	 * Constructeur.
+	 * @param	Object		$keyValueStorageService	key-Value storage service engine. (ex : hashui, redis, etc...).
+	 * @param	FineCache	$cache		(optionnel) Connexion au serveur de cache.
+	 * @param	string		$tableName	(optionnel) Nom de la table concernée.
+	 * @param	string		$idField	(optionnel) Nom de la clé primaire. "id" par défaut.
+	 * @param	string		$dbName		(optionnel) Nom de la base de données contenant la table.
+	 * @param	array		$fields		(optionnel) Hash de mapping des champs de la table ("champ dans la table" => "nom aliasé").
+	 * @param	string		$criteriaObject	(optionnel) Nom de l'objet de critères. "\Temma\DaoCriteria" par défaut.
+	 * @throws	\Temma\Exceptions\DaoException	Si l'objet de critère n'est pas bon.
+	 */
+	public function __construct($keyValueStorageService, \FineCache $cache=null, $tableName=null, $idField='id', $dbName=null, $fields=null, $criteriaObject=null) {
+		$this->_contentStore = $keyValueStorageService;
+		parent::__construct($cache=null, $tableName=null, $idField, $dbName, $fields, $criteriaObject);
+	}
+
+	/**
+	 * GET file content db + content hashui.
+	 * @param	$reportFileId	Sql identifier
+	 * @param	$contentData	(optionnal) Get content data. default: true.
+	 * @return	$array			File hash.
+	 */
+	public function get($fileId, $contentData = true) {
+		// get sql data
+		$res = parent::get($fileId);
+		if (empty($res))
+			return (null);
+
+		// get hashui data
+		if ($contentData)
+			$res['CONTENT'] = $this->getContent($fileId);
+		
+		// return
+		return ($res);
+	}
+	
+	/**
+	 * remove file
+	 * @param	$reportFileId	Sql identifier
+	 */
+	public function remove($fileId) {
+		// remove hashui data
+		$key = $this->getKey($fileId);
+		$this->_contentStore->drop($key);
+		
+		// remove from sql
+		parent::remove($fileId);
+
+		// return
+		unset($key);
+	}
+	
+	/**
+	 * remove files
+	 * @param	$reportFilesIds	Sql identifiers
+	 */
+	public function removeFromIds($ids) {
+		// verif
+		if (empty($ids) || !is_array($ids))
+			return;
+
+		// remove contents
+		foreach ($ids as $id) {
+			$key = $this->getKey($id);
+			$this->_contentStore->drop($key);
+		}
+		
+		// remove from sql
+		parent::removeFromIds($ids);
+
+		// return
+		unset($key);
+	}
+	
+	public function getPath($fileId) {
+		$key = $this->getKey($fileId);
+		return $this->_contentStore->getPathFromKey($key);
+	}
+
+	/* ********************************* PRIVATE FUNCTIONS ******************************* */
+
+		/**
+	 * Update file content.
+	 * @param	$reportFileId	Sql identifier
+	 * @param	$content		New content
+	 */
+	public function setContent($fileId, $content) {
+		$key = $this->getKey($fileId);
+		$this->_contentStore->set($content, $key);
+		
+		// return
+		unset($key);
+	}
+	
+	/**
+	 * GET file content.
+	 * @param	$reportFileId	Sql identifier
+	 * @return	$string			File content.
+	 */
+	public function getContent($fileId) {
+		$key = $this->getKey($fileId);
+		$res = $this->_contentStore->get($key);
+
+		// return
+		unset($key);
+		return ($res);
+	}
+
+	/**
+	 * get key from identifier
+	 * @param	string|int	Identifier
+	 * @return	string	Generated hashui key.
+	 */
+	private function getKey($fileId) {
+		$key = $this->_keyPrefix . ':' . $fileId;
+		return ($key);
+	}
+	
+}
+
+?>
